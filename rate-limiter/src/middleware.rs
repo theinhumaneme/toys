@@ -6,6 +6,7 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
+use tokio::time::sleep;
 
 use crate::limiter::RateLimiter;
 
@@ -19,9 +20,13 @@ pub async fn middleware_limiter(
         .get("X-Client-Id")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("anonymous");
-    if limiter.allow(client_id) {
-        next.run(req).await
-    } else {
-        StatusCode::TOO_MANY_REQUESTS.into_response()
+    match limiter.check(client_id) {
+        Some(wait) => {
+            if !wait.is_zero() {
+                sleep(wait).await;
+            }
+            next.run(req).await
+        }
+        None => StatusCode::TOO_MANY_REQUESTS.into_response(),
     }
 }
